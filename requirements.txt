@@ -5,3 +5,5 @@ langchain-groq
 openai-whisper
 torch
 ffmpeg-python
+faster-whisper
+numpy
