@@ -273,7 +273,7 @@ typed_prompt = st.chat_input("Ask Lumio anything...")
 
 user_prompt = None
 
-# Priority: voice > text
+# Priority: voice to > text
 if st.session_state.pending_voice_text:
     user_prompt = st.session_state.pending_voice_text
     st.session_state.pending_voice_text = None
