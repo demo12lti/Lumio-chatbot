@@ -2,3 +2,6 @@ streamlit
 python-dotenv
 langchain-community
 langchain-groq
+openai-whisper
+torch
+ffmpeg-python
