@@ -72,6 +72,9 @@ import os
 import streamlit as st
 from langchain_groq import ChatGroq
 import streamlit.components.v1 as components
+import whisper
+import tempfile
+
 
 # ==============================
 # CONFIG
@@ -85,6 +88,19 @@ st.set_page_config(
 # ⚠️ Use env / secrets in production
 # os.environ["GROQ_API_KEY"] = "YOUR_GROQ_API_KEY"
 GROQ_API_KEY= os.getenv("GROQ_API_KEY")
+
+if "pending_voice_text" not in st.session_state:
+    st.session_state.pending_voice_text = None
+
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
+
+@st.cache_resource
+def load_whisper():
+    return whisper.load_model("base")  # fast & accurate
+
+whisper_model = load_whisper()
 
 # ==============================
 # STYLES
@@ -172,48 +188,37 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 # ==============================
-# VOICE INPUT (Browser Speech API)
+# VOICE INPUT → TEXT (WHISPER)
 # ==============================
-components.html("""
-<script>
-const startDictation = () => {
-  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang = 'en-US';
-  recognition.start();
+audio = st.audio_input("🎙️ Speak")
 
-  recognition.onresult = function(event) {
-    const text = event.results[0][0].transcript;
-    window.parent.postMessage({type: 'VOICE_TEXT', text: text}, '*');
-  };
-};
-</script>
+if audio:
+    with st.spinner("🧠 Transcribing speech..."):
+        # Save audio to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio.read())
+            tmp_path = tmp.name
 
-<button onclick="startDictation()"
-style="
-background:#00c6ff;
-border:none;
-padding:10px 16px;
-border-radius:12px;
-font-size:16px;
-cursor:pointer;">
-🎙️ Speak
-</button>
-""", height=80)
+        # Transcribe
+        result = whisper_model.transcribe(tmp_path)
+        spoken_text = result["text"].strip()
 
-# Inject voice result into chat input
-st.markdown("""
-<script>
-window.addEventListener("message", (event) => {
-    if (event.data.type === "VOICE_TEXT") {
-        const input = document.querySelector("textarea");
-        if (input) {
-            input.value = event.data.text;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    }
-});
-</script>
-""", unsafe_allow_html=True)
+    st.success("✅ Transcription complete")
+    st.write("🗣️ You said:", spoken_text)
+
+    # Auto-fill chat input
+    # if spoken_text:
+    #     st.session_state.chat_history.append(
+    #         {"role": "user", "content": spoken_text}
+    #     )
+
+    #     with st.chat_message("user"):
+    #         st.markdown(spoken_text)
+
+    if spoken_text:
+        st.session_state.pending_voice_text = spoken_text
+
+
 
 # ==============================
 # DISPLAY CHAT HISTORY
@@ -262,7 +267,19 @@ def speak(text):
 # ==============================
 # CHAT INPUT
 # ==============================
-user_prompt = st.chat_input("Ask Lumio anything...")
+# user_prompt = st.chat_input("Ask Lumio anything...")
+
+typed_prompt = st.chat_input("Ask Lumio anything...")
+
+user_prompt = None
+
+# Priority: voice > text
+if st.session_state.pending_voice_text:
+    user_prompt = st.session_state.pending_voice_text
+    st.session_state.pending_voice_text = None
+elif typed_prompt:
+    user_prompt = typed_prompt
+
 
 # ==============================
 # HANDLE CHAT
